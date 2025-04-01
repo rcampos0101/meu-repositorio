@@ -103,7 +103,7 @@ st.markdown(f"[Compartilhar via WhatsApp]({whatsapp_url})", unsafe_allow_html=Tr
 
 # Compartilhar via E-mail
 email_subject = urllib.parse.quote("Dashboard Financeiro - Composição de Despesas")
-email_body = urllib.parse.quote(f"Olá,
+email_body = urllib.parse.quote(f"Olá,\n\nConfira o dashboard financeiro no seguinte link:\n{dashboard_url}\n\nAtenciosamente,")
 
 Confira o dashboard financeiro no seguinte link:
 {dashboard_url}
