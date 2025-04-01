@@ -1,140 +1,102 @@
-
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-import os
+import matplotlib.pyplot as plt
+import plotly.express as px
+from io import BytesIO
+import urllib.parse
 
-# Configurações da página
-st.set_page_config(
-    page_title="Dashboard Financeiro - Composição de Despesas",
-    page_icon="📊",
-    layout="wide"
-)
-
-# Cabeçalho personalizado com logo e descrição
-st.markdown("""
-<style>
-    .titulo-principal {
-        font-size: 32px;
-        font-weight: bold;
-        margin-bottom: 5px;
-        text-align: center;
-    }
-    .subtitulo {
-        font-size: 18px;
-        color: #555;
-        margin-bottom: 30px;
-        text-align: center;
-    }
-    .logo {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 10px;
-    }
-    .footer {
-        text-align: center;
-        font-size: 14px;
-        color: #888;
-        padding: 20px 0;
-        border-top: 1px solid #eee;
-        margin-top: 40px;
-    }
-</style>
-<div class="logo">
-    <img src="https://raw.githubusercontent.com/rcampos0101/meu-repositorio/main/good1.ico" alt="Logo" width="60">
-</div>
-<div class="titulo-principal">📊 Dashboard Financeiro</div>
-<div class="subtitulo">Visualize a evolução mensal das contas contábeis de forma interativa.</div>
-""", unsafe_allow_html=True)
-
-# Verificar existência do arquivo
-FILE_NAME = "DADOS to AI Testing.xlsx"
-if not os.path.exists(FILE_NAME):
-    st.error(f"⚠️ O arquivo '{FILE_NAME}' não foi encontrado no diretório do app.")
-    st.stop()
-
-# Carregar dados
+# Função para carregar dados
 @st.cache_data
 def load_data():
-    df = pd.read_excel(FILE_NAME, sheet_name="Dados para AI- Light")
-    df.replace([1, 11], 0, inplace=True)
-    for col in df.columns[1:]:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+    df = pd.read_excel("DADOS to AI Testing.xlsx", sheet_name="Dados para AI- Light")
+    df = df.drop(columns=["total"], errors="ignore")
+    df.set_index("Conta Contábil", inplace=True)
+    df = df.T.apply(pd.to_numeric, errors='coerce')
     return df
 
+# Função para exportar CSV
+def convert_df_to_csv(df):
+    return df.to_csv(index=True).encode('utf-8')
+
+# Função para exportar imagem PNG
+def fig_to_png_bytes(fig):
+    buf = BytesIO()
+    fig.write_image(buf, format="png")
+    buf.seek(0)
+    return buf
+
+# Carregar dados
 df = load_data()
 
-# Preparo dos dados para gráfico
-meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago2', 'Set', 'out', 'Nov', 'Dez']
-df_melted = df.drop(columns=["total"]).melt(id_vars=["Conta Contábil"], var_name="Mês", value_name="Valor")
-df_melted['Mês'] = pd.Categorical(df_melted['Mês'], categories=meses, ordered=True)
+# Sidebar - Filtros
+st.sidebar.header("Filtros")
+selected_accounts = st.sidebar.multiselect("Selecionar contas contábeis:", df.columns.tolist(), default=df.columns.tolist())
+selected_month = st.sidebar.selectbox("Selecionar mês para gráfico de pizza:", df.index.tolist())
 
-# Layout com painel lateral
-col_filtro, col_grafico = st.columns([1, 4])
+# Filtrar dados
+df_filtered = df[selected_accounts]
 
-with col_filtro:
-    st.markdown("### Filtros")
-    contas_opcao = st.multiselect(
-        "Selecione as contas contábeis:",
-        df["Conta Contábil"].unique(),
-        default=df["Conta Contábil"].unique()
-    )
+# Título e logo
+st.set_page_config(page_title="Dashboard Financeiro - Composição de Despesas", page_icon=":bar_chart:")
+st.image("Panda Icon 32x32.ico", width=60)
+st.title("Dashboard Financeiro - Composição de Despesas")
+st.subheader("Análise de Contas Contábeis por Mês")
+st.markdown("Este dashboard mostra a evolução mensal das principais contas contábeis, com filtros interativos e opções de exportação.")
 
-with col_grafico:
-    df_filtrado = df_melted[df_melted["Conta Contábil"].isin(contas_opcao)]
-
-    # Gráfico de linhas
-    fig = go.Figure()
-    for conta in contas_opcao:
-        dados = df_filtrado[df_filtrado["Conta Contábil"] == conta]
-        fig.add_trace(go.Scatter(
-            x=dados["Mês"],
-            y=dados["Valor"],
-            mode="lines+markers",
-            name=conta,
-            line=dict(width=0.5),
-            marker=dict(size=6)
-        ))
-    fig.update_layout(
-        title="Composição de Despesas por Conta Contábil",
-        plot_bgcolor="white",
-        xaxis_title="Mês",
-        yaxis_title="Valor (R$)",
-        height=500
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Botão de download dos dados filtrados
-    st.download_button(
-        label="📥 Baixar dados filtrados em CSV",
-        data=df_filtrado.to_csv(index=False).encode('utf-8'),
-        file_name="dados_filtrados.csv",
-        mime="text/csv"
-    )
-
-    # Link de compartilhamento do app
-    st.markdown("""
-    <br>
-    <a href="https://share.streamlit.io/rcampos0101/meu-repositorio/main/dashboard.py" target="_blank" style="text-decoration:none;">
-        📤 Compartilhar este dashboard
-    </a>
-    """, unsafe_allow_html=True)
-
-# Cálculos dos cards
-df_totais = df.set_index("Conta Contábil")
-receita = df_totais.loc["Receita Líquida", "total"]
-despesas = df_totais.drop("Receita Líquida")["total"].sum()
-resultado = receita + despesas  # despesas são negativas
-
-# Exibir cards
+# Cards
+total_geral = df_filtered.sum().sum()
+total_receitas = df_filtered[df_filtered > 0].sum().sum()
+total_despesas = df_filtered[df_filtered < 0].sum().sum()
 col1, col2, col3 = st.columns(3)
-col1.metric("Receita Líquida", f"R$ {receita:,.2f}".replace(",", "."))
-col2.metric("Total Despesas", f"R$ {abs(despesas):,.2f}".replace(",", "."))
-col3.metric("Resultado Geral", f"R$ {resultado:,.2f}".replace(",", "."))
+col1.metric("Resultado Geral", f"R$ {total_geral:,.2f}")
+col2.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
+col3.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
+
+# Gráfico interativo de linha
+fig_line = px.line(df_filtered, x=df_filtered.index, y=df_filtered.columns, labels={"value": "Valor (R$)", "index": "Mês"}, title="Evolução Mensal das Contas")
+st.plotly_chart(fig_line)
+
+# Gráfico de barras: Total por conta
+totais_por_conta = df_filtered.sum()
+fig_bar = px.bar(totais_por_conta, x=totais_por_conta.index, y=totais_por_conta.values,
+                 labels={"x": "Conta Contábil", "y": "Total (R$)"},
+                 title="Total por Conta Contábil no Ano")
+fig_bar.update_layout(xaxis_tickangle=-45)
+st.plotly_chart(fig_bar)
+
+# Gráfico de pizza: Composição percentual do mês selecionado
+valores_mes = df_filtered.loc[selected_month]
+fig_pie = px.pie(names=valores_mes.index, values=valores_mes.values,
+                 title=f"Composição Percentual - {selected_month}")
+st.plotly_chart(fig_pie)
+
+# Análise financeira
+with st.expander("Ver Análise Financeira"):
+    for col in df_filtered.columns:
+        var = df_filtered[col].pct_change().mean()
+        tendencia = "crescente" if var > 0 else "decrescente"
+        st.write(f"- A conta **{col}** tem uma tendência {tendencia} com variação média de {var:.2%} por mês.")
+
+# Botões de exportação e compartilhamento
+st.download_button("Baixar dados filtrados", convert_df_to_csv(df_filtered), "dados_filtrados.csv", "text/csv")
+st.download_button("Baixar todos os dados", convert_df_to_csv(df), "dados_completos.csv", "text/csv")
+
+# Exportar imagem PNG do gráfico de pizza
+st.download_button("Exportar Pizza como PNG", fig_to_png_bytes(fig_pie), file_name="grafico_pizza.png")
+
+# Compartilhar via WhatsApp
+dashboard_url = "https://seuapp.streamlit.app/"  # Substituir com URL real
+msg = f"Confira o dashboard financeiro aqui: {dashboard_url}"
+encoded_msg = urllib.parse.quote(msg)
+whatsapp_url = f"https://wa.me/?text={encoded_msg}"
+st.markdown(f"[Compartilhar via WhatsApp]({whatsapp_url})", unsafe_allow_html=True)
+
+# Compartilhar via E-mail
+email_subject = urllib.parse.quote("Dashboard Financeiro - Composição de Despesas")
+email_body = urllib.parse.quote(f"Olá,\n\nConfira o dashboard financeiro no seguinte link:\n{dashboard_url}\n\nAtenciosamente,")
+mailto_link = f"mailto:?subject={email_subject}&body={email_body}"
+st.markdown(f"[Compartilhar por E-mail]({mailto_link})", unsafe_allow_html=True)
 
 # Rodapé
-st.markdown("""
-<div class="footer">
-    Desenvolvido por <strong>Sistemas Intuitivos</strong> · © 2025
-</div>
-""", unsafe_allow_html=True)
+st.markdown("---")
+st.markdown("Desenvolvido por [Sua Empresa](https://example.com)")
