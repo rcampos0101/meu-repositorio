@@ -1,4 +1,7 @@
+
 import streamlit as st
+st.set_page_config(page_title="Dashboard Financeiro - Composição de Despesas", page_icon=":bar_chart:")
+
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
@@ -37,7 +40,6 @@ selected_month = st.sidebar.selectbox("Selecionar mês para gráfico de pizza:",
 df_filtered = df[selected_accounts]
 
 # Título e logo
-st.set_page_config(page_title="Dashboard Financeiro - Composição de Despesas", page_icon=":bar_chart:")
 st.image("Panda Icon 32x32.ico", width=60)
 st.title("Dashboard Financeiro - Composição de Despesas")
 st.subheader("Análise de Contas Contábeis por Mês")
@@ -102,7 +104,12 @@ st.markdown(f"[Compartilhar via WhatsApp]({whatsapp_url})", unsafe_allow_html=Tr
 
 # Compartilhar via E-mail
 email_subject = urllib.parse.quote("Dashboard Financeiro - Composição de Despesas")
-email_body = urllib.parse.quote(f"Olá,\n\nConfira o dashboard financeiro no seguinte link:\n{dashboard_url}\n\nAtenciosamente,")
+email_body = urllib.parse.quote(f"Olá,
+
+Confira o dashboard financeiro no seguinte link:
+{dashboard_url}
+
+Atenciosamente,")
 mailto_link = f"mailto:?subject={email_subject}&body={email_body}"
 st.markdown(f"[Compartilhar por E-mail]({mailto_link})", unsafe_allow_html=True)
 
