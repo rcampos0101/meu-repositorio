@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import plotly.express as px
 from io import BytesIO
 import urllib.parse
@@ -12,6 +11,7 @@ def load_data():
     df = df.drop(columns=["total"], errors="ignore")
     df.set_index("Conta Contábil", inplace=True)
     df = df.T.apply(pd.to_numeric, errors='coerce')
+    df = df.replace(1, pd.NA)  # remover valores 1 como placeholder
     return df
 
 # Função para exportar CSV
@@ -44,45 +44,54 @@ st.subheader("Análise de Contas Contábeis por Mês")
 st.markdown("Este dashboard mostra a evolução mensal das principais contas contábeis, com filtros interativos e opções de exportação.")
 
 # Cards
-total_geral = df_filtered.sum().sum()
-total_receitas = df_filtered[df_filtered > 0].sum().sum()
-total_despesas = df_filtered[df_filtered < 0].sum().sum()
-col1, col2, col3 = st.columns(3)
-col1.metric("Resultado Geral", f"R$ {total_geral:,.2f}")
-col2.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
-col3.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
+if not df_filtered.empty:
+    total_geral = df_filtered.sum().sum()
+    total_receitas = df_filtered[df_filtered > 0].sum().sum()
+    total_despesas = df_filtered[df_filtered < 0].sum().sum()
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Resultado Geral", f"R$ {total_geral:,.2f}")
+    col2.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
+    col3.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
 
-# Gráfico interativo de linha
-fig_line = px.line(df_filtered, x=df_filtered.index, y=df_filtered.columns, labels={"value": "Valor (R$)", "index": "Mês"}, title="Evolução Mensal das Contas")
-st.plotly_chart(fig_line)
+    # Gráfico interativo de linha
+    fig_line = px.line(df_filtered, x=df_filtered.index, y=df_filtered.columns, labels={"value": "Valor (R$)", "index": "Mês"}, title="Evolução Mensal das Contas")
+    st.plotly_chart(fig_line)
 
-# Gráfico de barras: Total por conta
-totais_por_conta = df_filtered.sum()
-fig_bar = px.bar(totais_por_conta, x=totais_por_conta.index, y=totais_por_conta.values,
-                 labels={"x": "Conta Contábil", "y": "Total (R$)"},
-                 title="Total por Conta Contábil no Ano")
-fig_bar.update_layout(xaxis_tickangle=-45)
-st.plotly_chart(fig_bar)
+    # Gráfico de barras: Total por conta
+    totais_por_conta = df_filtered.sum()
+    if totais_por_conta.dropna().empty:
+        st.warning("Nenhum dado disponível para o gráfico de barras.")
+    else:
+        fig_bar = px.bar(totais_por_conta, x=totais_por_conta.index, y=totais_por_conta.values,
+                         labels={"x": "Conta Contábil", "y": "Total (R$)"},
+                         title="Total por Conta Contábil no Ano")
+        fig_bar.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig_bar)
 
-# Gráfico de pizza: Composição percentual do mês selecionado
-valores_mes = df_filtered.loc[selected_month]
-fig_pie = px.pie(names=valores_mes.index, values=valores_mes.values,
-                 title=f"Composição Percentual - {selected_month}")
-st.plotly_chart(fig_pie)
+    # Gráfico de pizza: Composição percentual do mês selecionado
+    valores_mes = df_filtered.loc[selected_month].dropna()
+    if valores_mes.empty:
+        st.warning("Nenhum dado disponível para o gráfico de pizza.")
+    else:
+        fig_pie = px.pie(names=valores_mes.index, values=valores_mes.values,
+                         title=f"Composição Percentual - {selected_month}")
+        st.plotly_chart(fig_pie)
+        st.download_button("Exportar Pizza como PNG", fig_to_png_bytes(fig_pie), file_name="grafico_pizza.png")
 
-# Análise financeira
-with st.expander("Ver Análise Financeira"):
-    for col in df_filtered.columns:
-        var = df_filtered[col].pct_change().mean()
-        tendencia = "crescente" if var > 0 else "decrescente"
-        st.write(f"- A conta **{col}** tem uma tendência {tendencia} com variação média de {var:.2%} por mês.")
+    # Análise financeira
+    with st.expander("Ver Análise Financeira"):
+        for col in df_filtered.columns:
+            serie = df_filtered[col]
+            if serie.dropna().shape[0] > 1:
+                var = serie.pct_change().mean()
+                tendencia = "crescente" if var > 0 else "decrescente"
+                st.write(f"- A conta **{col}** tem uma tendência {tendencia} com variação média de {var:.2%} por mês.")
 
-# Botões de exportação e compartilhamento
-st.download_button("Baixar dados filtrados", convert_df_to_csv(df_filtered), "dados_filtrados.csv", "text/csv")
-st.download_button("Baixar todos os dados", convert_df_to_csv(df), "dados_completos.csv", "text/csv")
-
-# Exportar imagem PNG do gráfico de pizza
-st.download_button("Exportar Pizza como PNG", fig_to_png_bytes(fig_pie), file_name="grafico_pizza.png")
+    # Botões
+    st.download_button("Baixar dados filtrados", convert_df_to_csv(df_filtered), "dados_filtrados.csv", "text/csv")
+    st.download_button("Baixar todos os dados", convert_df_to_csv(df), "dados_completos.csv", "text/csv")
+else:
+    st.warning("Nenhuma conta contábil selecionada ou dados indisponíveis.")
 
 # Compartilhar via WhatsApp
 dashboard_url = "https://seuapp.streamlit.app/"  # Substituir com URL real
