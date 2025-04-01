@@ -1,117 +1,149 @@
-import streamlit as st
-st.set_page_config(page_title="Dashboard Financeiro - Composição de Despesas", page_icon=":bar_chart:")
 
+import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objs as go
 from io import BytesIO
 import urllib.parse
 
-# Função para carregar dados
+# Carregamento da planilha
 @st.cache_data
-def load_data():
+def carregar_dados():
     df = pd.read_excel("DADOS to AI Testing.xlsx", sheet_name="Dados para AI- Light")
-    df = df.drop(columns=["total"], errors="ignore")
-    df.set_index("Conta Contábil", inplace=True)
-    df = df.T.apply(pd.to_numeric, errors='coerce')
-    df = df.replace(1, pd.NA)  # remover valores 1 como placeholder
-    return df
+    df = df.drop(columns=['total'])
+    df_melted = df.melt(id_vars=['Conta Contábil'], var_name='Mês', value_name='Valor')
+    return df, df_melted
 
-# Função para exportar CSV
-def convert_df_to_csv(df):
-    return df.to_csv(index=True).encode('utf-8')
+# Layout do app
+st.set_page_config(
+    page_title="Dashboard Financeiro - Composição de Despesas",
+    layout="wide",
+    page_icon="📊"
+)
 
-# Função para exportar imagem PNG
-def fig_to_png_bytes(fig):
-    buf = BytesIO()
-    fig.write_image(buf, format="png")
-    buf.seek(0)
-    return buf
+# Logo e título
+st.image("Panda Icon 32x32.ico", width=50)
+st.markdown("# Dashboard Financeiro - Composição de Despesas")
+st.markdown("Visualize a composição mensal de receitas e despesas com gráficos interativos.")
 
-# Carregar dados
-df = load_data()
+# Carregar os dados
+df, df_melted = carregar_dados()
 
-# Sidebar - Filtros
-st.sidebar.header("Filtros")
-selected_accounts = st.sidebar.multiselect("Selecionar contas contábeis:", df.columns.tolist(), default=df.columns.tolist())
-selected_month = st.sidebar.selectbox("Selecionar mês para gráfico de pizza:", df.index.tolist())
+# Filtros interativos
+contas = st.sidebar.multiselect("Selecione as Contas Contábeis:", options=df['Conta Contábil'].unique(), default=df['Conta Contábil'].unique())
+meses = st.sidebar.multiselect("Selecione os Meses:", options=df_melted['Mês'].unique(), default=df_melted['Mês'].unique())
 
-# Filtrar dados
-df_filtered = df[selected_accounts]
+# Aplicar filtros
+df_filtrado = df_melted[df_melted['Conta Contábil'].isin(contas) & df_melted['Mês'].isin(meses)]
 
-# Título e logo
-st.image("Panda Icon 32x32.ico", width=60)
-st.title("Dashboard Financeiro - Composição de Despesas")
-st.subheader("Análise de Contas Contábeis por Mês")
-st.markdown("Este dashboard mostra a evolução mensal das principais contas contábeis, com filtros interativos e opções de exportação.")
+# Cards de totais
+st.markdown("### Totais Gerais")
+col1, col2, col3 = st.columns(3)
+resultado_geral = df[df['Conta Contábil'] == 'Receita Líquida'].drop(columns='Conta Contábil').sum().sum()
+despesas = df[df['Conta Contábil'].str.contains("Despesa")].drop(columns='Conta Contábil').sum().sum()
+receitas = df[df['Conta Contábil'].str.contains("Receita")].drop(columns='Conta Contábil').sum().sum()
+col1.metric("Resultado Geral", f"R$ {resultado_geral:,.2f}")
+col2.metric("Total Despesas", f"R$ {despesas:,.2f}")
+col3.metric("Total Receitas", f"R$ {receitas:,.2f}")
 
-# Cards
-if not df_filtered.empty:
-    total_geral = df_filtered.sum().sum()
-    total_receitas = df_filtered[df_filtered > 0].sum().sum()
-    total_despesas = df_filtered[df_filtered < 0].sum().sum()
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Resultado Geral", f"R$ {total_geral:,.2f}")
-    col2.metric("Total Receitas", f"R$ {total_receitas:,.2f}")
-    col3.metric("Total Despesas", f"R$ {total_despesas:,.2f}")
+# Gráfico de Linhas
+st.markdown("### Evolução Mensal das Contas")
+fig_linhas = go.Figure()
+for conta in df_filtrado['Conta Contábil'].unique():
+    dados_conta = df_filtrado[df_filtrado['Conta Contábil'] == conta]
+    fig_linhas.add_trace(go.Scatter(
+        x=dados_conta['Mês'],
+        y=dados_conta['Valor'],
+        mode='lines+markers',
+        name=conta,
+        line=dict(width=0.2)
+    ))
+fig_linhas.update_layout(
+    xaxis_title='Mês',
+    yaxis_title='Valor (R$)',
+    plot_bgcolor='white',
+    paper_bgcolor='white',
+    hovermode='x unified'
+)
+st.plotly_chart(fig_linhas, use_container_width=True)
 
-    # Gráfico interativo de linha
-    fig_line = px.line(df_filtered, x=df_filtered.index, y=df_filtered.columns, labels={"value": "Valor (R$)", "index": "Mês"}, title="Evolução Mensal das Contas")
-    st.plotly_chart(fig_line)
+# Gráfico de Barras (Total Anual por Conta)
+st.markdown("### Total Anual por Conta Contábil")
+df_barras = df_filtrado.groupby('Conta Contábil')['Valor'].sum().reset_index()
+fig_barras = go.Figure(go.Bar(
+    x=df_barras['Valor'],
+    y=df_barras['Conta Contábil'],
+    orientation='h',
+    text=df_barras['Valor'],
+    textposition='auto'
+))
+fig_barras.update_layout(
+    xaxis_title='Total Anual (R$)',
+    yaxis_title='Conta Contábil',
+    plot_bgcolor='white',
+    paper_bgcolor='white'
+)
+st.plotly_chart(fig_barras, use_container_width=True)
 
-    # Gráfico de barras: Total por conta
-    totais_por_conta = df_filtered.sum()
-    if totais_por_conta.dropna().empty:
-        st.warning("Nenhum dado disponível para o gráfico de barras.")
-    else:
-        fig_bar = px.bar(totais_por_conta, x=totais_por_conta.index, y=totais_por_conta.values,
-                         labels={"x": "Conta Contábil", "y": "Total (R$)"},
-                         title="Total por Conta Contábil no Ano")
-        fig_bar.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig_bar)
+# Gráfico de Pizza - Composição Percentual por Mês
+st.markdown("### Composição Percentual das Contas por Mês")
+mes_pizza = st.selectbox("Selecione um Mês para o Gráfico de Pizza:", options=meses)
+df_pizza = df_filtrado[df_filtrado['Mês'] == mes_pizza]
+df_pizza_grouped = df_pizza.groupby('Conta Contábil')['Valor'].sum().reset_index()
+fig_pizza = go.Figure(go.Pie(
+    labels=df_pizza_grouped['Conta Contábil'],
+    values=df_pizza_grouped['Valor'],
+    hoverinfo='label+percent',
+    textinfo='percent+label',
+    hole=0.3
+))
+fig_pizza.update_layout(
+    paper_bgcolor='white'
+)
+st.plotly_chart(fig_pizza, use_container_width=True)
 
-    # Gráfico de pizza: Composição percentual do mês selecionado
-    valores_mes = df_filtered.loc[selected_month].dropna()
-    if valores_mes.empty:
-        st.warning("Nenhum dado disponível para o gráfico de pizza.")
-    else:
-        fig_pie = px.pie(names=valores_mes.index, values=valores_mes.values,
-                         title=f"Composição Percentual - {selected_month}")
-        st.plotly_chart(fig_pie)
-        st.download_button("Exportar Pizza como PNG", fig_to_png_bytes(fig_pie), file_name="grafico_pizza.png")
+# Análise financeira dos gráficos
+with st.expander("📊 Mostrar Análise Financeira"):
+    st.markdown("### Análise Financeira")
+    maiores = df_barras.sort_values(by='Valor', ascending=False).head(3)
+    menores = df_barras.sort_values(by='Valor').head(3)
+    st.write("**Top 3 maiores contas:**")
+    for i, row in maiores.iterrows():
+        st.write(f"- {row['Conta Contábil']}: R$ {row['Valor']:,.2f}")
+    st.write("**Top 3 menores contas:**")
+    for i, row in menores.iterrows():
+        st.write(f"- {row['Conta Contábil']}: R$ {row['Valor']:,.2f}")
 
-    # Análise financeira
-    with st.expander("Ver Análise Financeira"):
-        for col in df_filtered.columns:
-            serie = df_filtered[col]
-            if serie.dropna().shape[0] > 1:
-                var = serie.pct_change().mean()
-                tendencia = "crescente" if var > 0 else "decrescente"
-                st.write(f"- A conta **{col}** tem uma tendência {tendencia} com variação média de {var:.2%} por mês.")
+# Botões de exportação
+st.markdown("### Exportações")
+col_csv, col_img = st.columns(2)
 
-    # Botões
-    st.download_button("Baixar dados filtrados", convert_df_to_csv(df_filtered), "dados_filtrados.csv", "text/csv")
-    st.download_button("Baixar todos os dados", convert_df_to_csv(df), "dados_completos.csv", "text/csv")
-else:
-    st.warning("Nenhuma conta contábil selecionada ou dados indisponíveis.")
+# Download CSV dos dados filtrados
+csv = df_filtrado.to_csv(index=False).encode('utf-8')
+col_csv.download_button(
+    label="📥 Baixar Dados Filtrados (.CSV)",
+    data=csv,
+    file_name='dados_filtrados.csv',
+    mime='text/csv'
+)
 
-# Compartilhar via WhatsApp
-dashboard_url = "https://seuapp.streamlit.app/"  # Substituir com URL real
-msg = f"Confira o dashboard financeiro aqui: {dashboard_url}"
-encoded_msg = urllib.parse.quote(msg)
-whatsapp_url = f"https://wa.me/?text={encoded_msg}"
-st.markdown(f"[Compartilhar via WhatsApp]({whatsapp_url})", unsafe_allow_html=True)
+# Exportar gráfico como imagem PNG
+img_bytes = fig_linhas.to_image(format="png")
+col_img.download_button(
+    label="🖼️ Exportar Gráfico de Linhas (PNG)",
+    data=img_bytes,
+    file_name="grafico_linhas.png",
+    mime="image/png"
+)
 
-# Compartilhar via E-mail
-email_subject = urllib.parse.quote("Dashboard Financeiro - Composição de Despesas")
-email_body = urllib.parse.quote(f"Olá,\n\nConfira o dashboard financeiro no seguinte link:\n{dashboard_url}\n\nAtenciosamente,")
-
-Confira o dashboard financeiro no seguinte link:
-{dashboard_url}
-
-
-mailto_link = f"mailto:?subject={email_subject}&body={email_body}"
-st.markdown(f"[Compartilhar por E-mail]({mailto_link})", unsafe_allow_html=True)
+# Compartilhamento via WhatsApp e Email
+st.markdown("### Compartilhar")
+link_app = "https://seuapp.streamlit.app"  # substitua pelo link real do app
+mensagem = f"Confira este dashboard financeiro: {link_app}"
+url_whatsapp = f"https://wa.me/?text={urllib.parse.quote(mensagem)}"
+url_email = f"mailto:?subject=Dashboard Financeiro&body={urllib.parse.quote(mensagem)}"
+st.markdown(f"[📲 Enviar via WhatsApp]({url_whatsapp})", unsafe_allow_html=True)
+st.markdown(f"[📧 Enviar por Email]({url_email})", unsafe_allow_html=True)
 
 # Rodapé
 st.markdown("---")
-st.markdown("Desenvolvido por [Sua Empresa](https://example.com)")
+st.markdown("Desenvolvido por Ricardo | Engenharia e Software Designer ©")
