@@ -108,7 +108,7 @@ email_body = urllib.parse.quote(f"Olá,\n\nConfira o dashboard financeiro no seg
 Confira o dashboard financeiro no seguinte link:
 {dashboard_url}
 
-Atenciosamente,")
+
 mailto_link = f"mailto:?subject={email_subject}&body={email_body}"
 st.markdown(f"[Compartilhar por E-mail]({mailto_link})", unsafe_allow_html=True)
 
